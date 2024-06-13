@@ -1,0 +1,59 @@
+pipeline {
+    agent any
+    environment {
+        COMPOSER_ALLOW_SUPERUSER = '1' // Allow Composer to run as root/superuser
+    }
+    
+    stages {
+        stage('Build') {
+            steps {
+                script {
+                    sh 'cd /var/www/html'
+                    // Download Composer installer
+                    sh 'curl -sS https://getcomposer.org/installer -o /tmp/composer-setup.php'
+                    sh 'HASH=`curl -sS https://composer.github.io/installer.sig`'
+                    
+                    // Verify Composer installer
+                    
+                    sh '''
+                     php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+                     php -r "if (hash_file('sha384', 'composer-setup.php') === 'dac665fdc30fdd8ec78b38b9800061b4150413ff2e3b6f88543c636f7cd84f6db9189d43a81e5503cda447da73c7e5b6') { echo 'Installer verified'; } else { echo 'Installer corrupt'; unlink('composer-setup.php'); } echo PHP_EOL;"
+                     php composer-setup.php
+                    '''
+                  
+                    
+                    
+                    // Run Composer installer
+                   
+                    sh 'php /tmp/composer-setup.php --install-dir=/usr/bin --filename=composer'
+                    
+                    
+                    // Create a directory
+                     
+                     sh 'sudo mkdir /var/www/html/drupal'
+                     sh 'sudo chmod -R 777 /var/www/html/drupal'
+                     
+                    
+                    // Create Drupal project
+                    sh 'composer create-project drupal/recommended-project:9.2.1 /var/www/html/drupal'
+                }
+            }
+        }
+        stage('Deploy') {
+            steps {
+                script {
+                     withCredentials([usernamePassword(credentialsId: '7483a6c8-ab31-42ac-9aa9-1b5ccffc2c60', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+                        // Copy Drupal project to remote server
+                        sh "sshpass -p '$PASS' ssh -o StrictHostKeyChecking=no $USER@20.244.107.249 'sudo mkdir -p /var/www/html/drupal1'"
+                        sh "sshpass -p '$PASS' ssh -o StrictHostKeyChecking=no $USER@20.244.107.249 'sudo chmod -R 777 /var/www/html/drupal1'"
+                        
+                        sh "sshpass -p '$PASS' scp -o StrictHostKeyChecking=no -r /var/www/html/drupal $USER@20.244.107.249:/var/www/html/drupal1"
+                        
+                        // Restart Apache on the remote server
+                        sh "sshpass -p '$PASS' ssh -o StrictHostKeyChecking=no $USER@20.244.107.249 'sudo systemctl restart apache2'"
+                    }
+                }
+            }
+        }
+    }
+}
